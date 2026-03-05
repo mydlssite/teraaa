@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeraGrab — Instant TeraBox Downloader</title>
+    <meta name="description"
+        content="Grab TeraBox videos in one click. Stream or download instantly. No ads, no login.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <!-- Mesh gradient background -->
+    <div class="mesh-bg">
+        <div class="mesh-blob b1"></div>
+        <div class="mesh-blob b2"></div>
+        <div class="mesh-blob b3"></div>
+        <div class="mesh-blob b4"></div>
+    </div>
+    <div class="noise-overlay"></div>
+
+    <!-- Navbar -->
+    <nav class="nav">
+        <a href="/" class="logo">
+            <div class="logo-mark">
+                <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M5 3l14 9-14 9V3z" fill="url(#lg)" />
+                    <defs>
+                        <linearGradient id="lg" x1="5" y1="3" x2="19" y2="12">
+                            <stop stop-color="#00f0ff" />
+                            <stop offset="1" stop-color="#7b61ff" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </div>
+            Tera<span>Grab</span>
+        </a>
+    </nav>
+
+    <!-- Hero -->
+    <main class="container">
+        <section class="hero">
+            <div class="eyebrow"><span class="live-dot"></span>Free &bull; No Login &bull; Instant</div>
+            <h1>Paste. <span class="accent-text">Grab.</span> Done.</h1>
+            <p class="tagline">Stream or download any TeraBox file in one click.</p>
+
+            <!-- Input -->
+            <div class="input-row" id="input-row">
+                <div class="input-box" id="input-box">
+                    <svg class="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                    </svg>
+                    <input id="url" type="url" placeholder="https://terabox.com/s/..." autocomplete="off"
+                        spellcheck="false">
+                    <button id="go" onclick="grab()">
+                        <span class="go-txt">Grab</span>
+                        <svg class="go-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="13 17 18 12 13 7" />
+                            <line x1="6" y1="12" x2="18" y2="12" />
+                        </svg>
+                        <div class="go-spin"></div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Progress steps -->
+            <div class="progress-steps" id="progress-steps">
+                <div class="pstep" id="ps-connect"><span class="ps-dot"></span>Connecting</div>
+                <div class="ps-line"></div>
+                <div class="pstep" id="ps-fetch"><span class="ps-dot"></span>Fetching</div>
+                <div class="ps-line"></div>
+                <div class="pstep" id="ps-done"><span class="ps-dot"></span>Ready</div>
+            </div>
+        </section>
+
+        <!-- Error -->
+        <div class="err" id="err"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+            </svg><span id="err-msg"></span></div>
+
+        <!-- Skeleton -->
+        <section class="skeleton" id="skeleton">
+            <div class="sk-player sk-shimmer"></div>
+            <div class="sk-row">
+                <div class="sk-circle sk-shimmer"></div>
+                <div class="sk-lines">
+                    <div class="sk-bar sk-shimmer" style="width:65%"></div>
+                    <div class="sk-bar sk-shimmer" style="width:40%"></div>
+                </div>
+            </div>
+            <div class="sk-btns">
+                <div class="sk-btn sk-shimmer"></div>
+                <div class="sk-btn sk-shimmer"></div>
+            </div>
+        </section>
+
+        <!-- Result -->
+        <section class="result" id="result">
+            <div class="card">
+                <!-- Player (HLS/Plyr) -->
+                <div class="vid-wrap" id="vid-wrap">
+                    <video id="hls-vid" controls crossorigin playsinline preload="metadata"></video>
+                    <div class="vid-badge" id="vid-badge">HD</div>
+                </div>
+
+                <!-- Info -->
+                <div class="card-body">
+                    <div class="info-row">
+                        <div class="type-icon" id="type-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="23 7 16 12 23 17 23 7" />
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                            </svg>
+                        </div>
+                        <div class="info-text">
+                            <h2 id="fname">—</h2>
+                            <div class="chips" id="chips"></div>
+                        </div>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="btn-grid">
+                        <a class="btn btn-glow" id="btn-fast" href="#" target="_blank">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                            </svg>
+                            Fast Download
+                        </a>
+                        <a class="btn btn-glass" id="btn-dl" href="#" target="_blank">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            Download
+                        </a>
+                    </div>
+
+                    <!-- Copy link -->
+                    <button class="copy-row" id="copy-btn" onclick="copyLink()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                        <span id="copy-text">Copy download link</span>
+                    </button>
+
+                    <!-- Quality -->
+                    <div class="q-section" id="q-section">
+                        <div class="q-head">STREAM QUALITY</div>
+                        <div class="q-list" id="q-list"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- History -->
+        <section class="history" id="history">
+            <div class="hist-head">
+                <h3>Recent</h3>
+                <button class="hist-clear" onclick="clearHistory()">Clear</button>
+            </div>
+            <div class="hist-list" id="hist-list"></div>
+        </section>
+    </main>
+
+    <footer class="foot">
+        <span>&copy; 2026 TeraGrab</span>
+        <span class="foot-sep">&middot;</span>
+        <a href="https://github.com/devilxsam" target="_blank" class="foot-link">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                <path
+                    d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.694.825.576C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z" />
+            </svg>
+            @devilxsam
+        </a>
+    </footer>
+
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+    <script src="/static/script.js"></script>
+</body>
+
+</html>
