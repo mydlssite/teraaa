@@ -1,5 +1,5 @@
 /* ==========================================================
-   TeraGrab — Script (HLS Player Only)
+   TeraGrab — Script (Video.js — built-in HLS + Audio Tracks)
    ========================================================== */
 
 const $ = id => document.getElementById(id);
@@ -10,19 +10,32 @@ const errMsg = $('err-msg');
 const skel = $('skeleton');
 const result = $('result');
 const steps = $('progress-steps');
-const hlsVid = $('hls-vid');
 const histEl = $('history');
 const histList = $('hist-list');
 
 let currentData = null;
-let hlsInstance = null;
-let plyrInstance = null;
+let vjsPlayer = null;
+let selectedApi = 'playterabox';
 const HIST_KEY = 'teragrab_history';
 
+// ---- API Source Selector ----
+function selectApi(api) {
+    selectedApi = api;
+    document.querySelectorAll('.api-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.api === api);
+    });
+}
 // ---- Grab ----
 async function grab() {
     const link = url.value.trim();
     if (!link) { showErr('Paste a TeraBox link first'); url.focus(); return; }
+
+    // Validate protocol
+    if (!link.startsWith('http://') && !link.startsWith('https://')) {
+        showErr('Please enter a valid URL starting with http:// or https://');
+        url.focus();
+        return;
+    }
 
     hideErr(); hideResult();
     setLoading(true);
@@ -36,7 +49,7 @@ async function grab() {
         const res = await fetch('/api/fetch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: link }),
+            body: JSON.stringify({ url: link, api: selectedApi }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) throw new Error(json.error || 'API error');
@@ -47,8 +60,16 @@ async function grab() {
         console.log(`✦ Fetched in ${elapsed}ms${json.cached ? ' (cached)' : ''}`);
 
         hideSkeleton();
-        render(json.data.list[0]);
-        saveHistory(json.data.list[0], link);
+
+        // Handle multiple files
+        const files = json.data.list || [];
+        const zipLink = json.data.zip_download_link || null;
+        if (files.length > 1) {
+            renderFileList(files, link, zipLink);
+        } else {
+            render(files[0]);
+        }
+        saveHistory(files[0], link);
     } catch (e) {
         hideSkeleton();
         hideSteps();
@@ -59,8 +80,12 @@ async function grab() {
 }
 
 // ---- Render ----
-function render(f) {
+function render(f, isMultifile = false) {
     currentData = f;
+
+    // Hide file list if it was previously shown (single file mode)
+    const flSec = $('file-list-section');
+    if (flSec && !isMultifile) flSec.style.display = 'none';
 
     // Name
     $('fname').textContent = f.name || 'Unknown file';
@@ -78,8 +103,8 @@ function render(f) {
     // Video badge
     $('vid-badge').textContent = f.quality || 'FILE';
 
-    // Setup HLS player
-    setupHLS(f);
+    // Setup Video.js player
+    setupPlayer(f);
 
     // Download buttons
     $('btn-fast').href = f.fast_download_link || f.download_link || '#';
@@ -104,7 +129,7 @@ function render(f) {
             a.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg><b>${q.toUpperCase()}</b>`;
             a.onclick = e => {
                 e.preventDefault();
-                loadHLSStream(lnk, q);
+                loadStream(lnk, q);
                 $('vid-wrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
             };
             qList.appendChild(a);
@@ -113,107 +138,253 @@ function render(f) {
         qSec.style.display = 'none';
     }
 
+    // Reset audio section
+    hideAudioTracks();
+
     showResult();
 }
 
-// ---- HLS Player setup ----
-function setupHLS(f) {
-    destroyHLS();
+// ---- Multi-file list ----
+function renderFileList(files, inputUrl, zipLink) {
+    // Render the first file by default
+    render(files[0], true);
+
+    // Build file list section
+    const qSec = $('q-section');
+    const listHtml = files.map((f, i) => {
+        const isActive = i === 0 ? ' active' : '';
+        const thumb = f.thumbnail ? `<img class="fl-thumb" src="${f.thumbnail}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div class="fl-thumb"></div>';
+        return `<div class="fl-item${isActive}" data-idx="${i}">
+            ${thumb}
+            <div class="fl-info">
+                <span class="fl-name">${escHtml(f.name || 'Unknown')}</span>
+                <span class="fl-meta">${[f.quality, f.duration, f.size_formatted].filter(Boolean).join(' · ')}</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    // ZIP download button
+    const zipHtml = zipLink ? `
+        <a class="btn btn-zip" href="${zipLink}" target="_blank">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download All (${files.length} files) — ZIP
+        </a>` : '';
+
+    // Insert file list before quality section
+    let fileListEl = $('file-list-section');
+    if (!fileListEl) {
+        fileListEl = document.createElement('div');
+        fileListEl.id = 'file-list-section';
+        fileListEl.className = 'file-list-section';
+        qSec.parentElement.insertBefore(fileListEl, qSec);
+    }
+
+    fileListEl.innerHTML = `
+        <div class="q-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            ${files.length} FILES FOUND
+        </div>
+        ${zipHtml}
+        <div class="fl-list">${listHtml}</div>`;
+    fileListEl.style.display = '';
+
+    // Click handlers
+    fileListEl.querySelectorAll('.fl-item').forEach(item => {
+        item.onclick = () => {
+            const idx = parseInt(item.dataset.idx);
+            fileListEl.querySelectorAll('.fl-item').forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+            render(files[idx], true);
+        };
+    });
+}
+
+// ---- Video.js Player ----
+function setupPlayer(f) {
+    // Dispose previous player
+    destroyPlayer();
 
     const wrap = $('vid-wrap');
 
-    if (f.type === 'video' && f.fast_stream_url && typeof f.fast_stream_url === 'object') {
+    if (f.type === 'video' && (f.fast_stream_url || f.stream_url)) {
         wrap.style.display = '';
 
-        // Get highest quality as default
-        const qualities = Object.entries(f.fast_stream_url);
-        const [defaultQ, defaultUrl] = qualities[qualities.length - 1];
+        // Get the source URL
+        let src, srcType;
+        if (f.fast_stream_url && typeof f.fast_stream_url === 'object') {
+            const qualities = Object.entries(f.fast_stream_url);
+            src = qualities[qualities.length - 1][1]; // highest quality
+            srcType = 'application/x-mpegURL';
+        } else {
+            src = f.stream_url;
+            srcType = 'video/mp4';
+        }
 
-        hlsVid.poster = f.thumbnail || '';
-
-        // Initialize Plyr
-        plyrInstance = new Plyr(hlsVid, {
-            controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'pip', 'fullscreen'],
-            settings: ['quality', 'speed'],
-            quality: {
-                default: qualities.length - 1,
-                options: qualities.map((_, i) => i),
-                forced: true,
-                onChange: (idx) => {
-                    if (qualities[idx]) {
-                        loadHLSStream(qualities[idx][1], qualities[idx][0]);
-                    }
-                }
+        // Initialize Video.js
+        vjsPlayer = videojs('vjs-player', {
+            fluid: true,
+            aspectRatio: '16:9',
+            responsive: true,
+            html5: {
+                vhs: {
+                    overrideNative: true,
+                    enableLowInitialPlaylist: false,
+                },
+                nativeAudioTracks: false,
+                nativeVideoTracks: false,
             },
-            i18n: {
-                qualityLabel: {
-                    0: qualities[0] ? qualities[0][0].toUpperCase() : '360p',
-                    1: qualities[1] ? qualities[1][0].toUpperCase() : '480p',
-                    2: qualities[2] ? qualities[2][0].toUpperCase() : '720p',
-                }
+            controlBar: {
+                children: [
+                    'playToggle',
+                    'volumePanel',
+                    'currentTimeDisplay',
+                    'timeDivider',
+                    'durationDisplay',
+                    'progressControl',
+                    'remainingTimeDisplay',
+                    'audioTrackButton',
+                    'playbackRateMenuButton',
+                    'fullscreenToggle',
+                ],
+            },
+            playbackRates: [0.5, 1, 1.25, 1.5, 2],
+        });
+
+        // Set poster
+        if (f.thumbnail) {
+            vjsPlayer.poster(f.thumbnail);
+        }
+
+        // Set source
+        vjsPlayer.src({ type: srcType, src: src });
+
+        // Listen for audio tracks
+        vjsPlayer.ready(() => {
+            // Auto-play disabled per user request
+            // vjsPlayer.play().catch(() => { });
+
+            // Check audio tracks once loaded
+            vjsPlayer.on('loadedmetadata', () => {
+                checkAudioTracks();
+            });
+
+            // Also listen for tech-level audio track changes
+            const tracks = vjsPlayer.audioTracks();
+            if (tracks) {
+                tracks.addEventListener('addtrack', () => checkAudioTracks());
+                tracks.addEventListener('change', () => updateAudioTrackUI());
             }
         });
 
-        loadHLSStream(defaultUrl, defaultQ);
-
-    } else if (f.type === 'video' && f.stream_url) {
-        // Fallback: direct stream (no HLS available)
-        wrap.style.display = '';
-        hlsVid.poster = f.thumbnail || '';
-        plyrInstance = new Plyr(hlsVid, {
-            controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'pip', 'fullscreen'],
-        });
-        hlsVid.src = f.stream_url;
-
     } else if (f.thumbnail) {
         wrap.style.display = '';
-        hlsVid.poster = f.thumbnail;
-        hlsVid.removeAttribute('src');
-
+        vjsPlayer = videojs('vjs-player', { fluid: true, aspectRatio: '16:9' });
+        vjsPlayer.poster(f.thumbnail);
     } else {
         wrap.style.display = 'none';
     }
 }
 
-function loadHLSStream(streamUrl, quality) {
-    const videoEl = plyrInstance ? plyrInstance.media : hlsVid;
+function loadStream(streamUrl, quality) {
+    if (!vjsPlayer) return;
 
-    if (hlsInstance) {
-        hlsInstance.destroy();
-        hlsInstance = null;
-    }
+    vjsPlayer.src({
+        type: 'application/x-mpegURL',
+        src: streamUrl,
+    });
+    vjsPlayer.play().catch(() => { });
 
-    if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-        hlsInstance = new Hls({
-            maxBufferLength: 30,
-            maxMaxBufferLength: 60,
-            startLevel: -1,
-            enableWorker: true,
-        });
-        hlsInstance.loadSource(streamUrl);
-        hlsInstance.attachMedia(videoEl);
-        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-            videoEl.play().catch(() => { });
-        });
-        hlsInstance.on(Hls.Events.ERROR, (_, data) => {
-            if (data.fatal) {
-                console.warn('HLS error, recovering...');
-                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
-                else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
-            }
-        });
-    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        videoEl.src = streamUrl;
-        videoEl.addEventListener('loadedmetadata', () => videoEl.play().catch(() => { }), { once: true });
-    }
+    // Re-check audio tracks after quality switch
+    vjsPlayer.one('loadedmetadata', () => checkAudioTracks());
 
     // Update badge
     $('vid-badge').textContent = quality ? quality.toUpperCase() : 'HD';
 }
 
-function destroyHLS() {
-    if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
-    if (plyrInstance) { plyrInstance.destroy(); plyrInstance = null; }
+function destroyPlayer() {
+    if (vjsPlayer) {
+        vjsPlayer.dispose();
+        vjsPlayer = null;
+
+        // Recreate the video element (Video.js removes it on dispose)
+        const wrap = $('vid-wrap');
+        const badge = wrap.querySelector('.vid-badge');
+
+        const video = document.createElement('video');
+        video.id = 'vjs-player';
+        video.className = 'video-js vjs-big-play-centered';
+        video.setAttribute('controls', '');
+        video.setAttribute('crossorigin', 'anonymous');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('preload', 'metadata');
+
+        // Insert before the badge
+        if (badge) {
+            wrap.insertBefore(video, badge);
+        } else {
+            wrap.appendChild(video);
+        }
+    }
+}
+
+// ---- Audio Track handling ----
+function checkAudioTracks() {
+    if (!vjsPlayer) return;
+
+    const tracks = vjsPlayer.audioTracks();
+    if (tracks && tracks.length > 1) {
+        renderAudioTracks(tracks);
+    } else {
+        hideAudioTracks();
+    }
+}
+
+function renderAudioTracks(tracks) {
+    const section = $('audio-section');
+    const list = $('audio-list');
+    section.style.display = '';
+    list.innerHTML = '';
+
+    for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+        const btn = document.createElement('button');
+        btn.className = 'a-btn' + (track.enabled ? ' active' : '');
+
+        const lang = track.language || '';
+        const name = track.label || `Track ${i + 1}`;
+
+        btn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            ${lang ? `<span class="a-lang">${lang.toUpperCase()}</span>` : ''}
+            ${escHtml(name)}`;
+
+        btn.onclick = () => switchAudioTrack(i);
+        list.appendChild(btn);
+    }
+}
+
+function switchAudioTrack(idx) {
+    if (!vjsPlayer) return;
+    const tracks = vjsPlayer.audioTracks();
+    for (let i = 0; i < tracks.length; i++) {
+        tracks[i].enabled = (i === idx);
+    }
+    updateAudioTrackUI();
+    console.log(`✦ Switched to audio track ${idx}`);
+}
+
+function updateAudioTrackUI() {
+    if (!vjsPlayer) return;
+    const tracks = vjsPlayer.audioTracks();
+    const btns = $('audio-list').querySelectorAll('.a-btn');
+    for (let i = 0; i < btns.length && i < tracks.length; i++) {
+        btns[i].classList.toggle('active', tracks[i].enabled);
+    }
+}
+
+function hideAudioTracks() {
+    const section = $('audio-section');
+    if (section) section.style.display = 'none';
 }
 
 // ---- Copy link ----

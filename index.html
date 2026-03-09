@@ -12,7 +12,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+    <link rel="stylesheet" href="https://vjs.zencdn.net/8.10.0/video-js.css">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 
@@ -71,6 +71,34 @@
                         <div class="go-spin"></div>
                     </button>
                 </div>
+
+                <!-- API Source Selector -->
+                <div class="api-selector" id="api-selector">
+                    <button class="api-btn active" data-api="playterabox" onclick="selectApi('playterabox')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                        </svg>
+                        Tera API 1
+                    </button>
+                    <button class="api-btn" data-api="iteraplay" onclick="selectApi('iteraplay')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        Tera API 2
+                    </button>
+                    <button class="api-btn" data-api="1024tera" onclick="selectApi('1024tera')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                            <line x1="8" y1="21" x2="16" y2="21" />
+                            <line x1="12" y1="17" x2="12" y2="21" />
+                        </svg>
+                        Tera API 3
+                    </button>
+                </div>
             </div>
 
             <!-- Progress steps -->
@@ -109,9 +137,11 @@
         <!-- Result -->
         <section class="result" id="result">
             <div class="card">
-                <!-- Player (HLS/Plyr) -->
+                <!-- Player (Video.js) -->
                 <div class="vid-wrap" id="vid-wrap">
-                    <video id="hls-vid" controls crossorigin playsinline preload="metadata"></video>
+                    <video id="vjs-player" class="video-js vjs-big-play-centered" controls crossorigin="anonymous"
+                        playsinline preload="metadata">
+                    </video>
                     <div class="vid-badge" id="vid-badge">HD</div>
                 </div>
 
@@ -164,6 +194,20 @@
                         <div class="q-head">STREAM QUALITY</div>
                         <div class="q-list" id="q-list"></div>
                     </div>
+
+                    <!-- Audio Tracks -->
+                    <div class="audio-section" id="audio-section" style="display:none">
+                        <div class="q-head">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+                                <path d="M9 18V5l12-2v13" />
+                                <circle cx="6" cy="18" r="3" />
+                                <circle cx="18" cy="16" r="3" />
+                            </svg>
+                            AUDIO TRACK
+                        </div>
+                        <div class="audio-list" id="audio-list"></div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -190,8 +234,7 @@
         </a>
     </footer>
 
-    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
     <script src="/static/script.js"></script>
 </body>
 
