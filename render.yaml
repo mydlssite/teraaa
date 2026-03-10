@@ -1,11 +1,8 @@
 services:
   - type: web
     name: teragrab
-    runtime: python
-    buildCommand: "chmod +x build.sh && ./build.sh"
-    startCommand: "gunicorn server:app --bind 0.0.0.0:$PORT --timeout 120 --workers 2"
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11"
-      - key: PLAYWRIGHT_BROWSERS_PATH
-        value: "/opt/render/.cache/ms-playwright"
+      - key: PORT
+        value: "10000"
