@@ -81,7 +81,7 @@ def fetch_iteraplay(url):
 async def _fetch_iteraplay_async(terabox_url):
     from playwright.async_api import async_playwright
 
-    print("  🔄 iTeraPlay: Getting fresh cookies...")
+    print("  🔄 iTeraPlay: Launching browser...")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -97,78 +97,63 @@ async def _fetch_iteraplay_async(terabox_url):
 
         try:
             await page.goto("https://iteraplay.com/", wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(5)  # Wait for Cloudflare
+            await asyncio.sleep(5)
 
             title = await page.title()
             print(f"  📄 Page: {title}")
 
-            if "challenge" in title.lower() or "cloudflare" in title.lower():
+            # Wait for Cloudflare challenge to resolve
+            if "challenge" in title.lower() or "just a moment" in title.lower():
                 print("  ⏳ Waiting for Cloudflare...")
-                await asyncio.sleep(10)
+                await asyncio.sleep(15)
+                title = await page.title()
+                print(f"  📄 Page after wait: {title}")
         except Exception as e:
             print(f"  ⚠️ Navigation: {e}")
 
-        # Get all cookies
-        all_cookies = await context.cookies()
-        cookie_dict = {c["name"]: c["value"] for c in all_cookies}
-        print(f"  🍪 Cookies: {list(cookie_dict.keys())}")
+        # Make the API call FROM INSIDE the browser (bypasses Cloudflare)
+        print(f"  🔄 Calling API from browser context...")
+        api_result = await page.evaluate("""
+            async (url) => {
+                try {
+                    const resp = await fetch('https://iteraplay.com/api/stream', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': '*/*',
+                        },
+                        body: JSON.stringify({ url: url }),
+                    });
+                    const data = await resp.json();
+
+                    // Handle token expiry
+                    if (data.error_detail && data.error_detail.toLowerCase().includes('expired') && data.new_api_token) {
+                        document.cookie = '__secure_token=' + data.new_api_token + '; path=/';
+                        const resp2 = await fetch('https://iteraplay.com/api/stream', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': '*/*',
+                            },
+                            body: JSON.stringify({ url: url }),
+                        });
+                        return await resp2.json();
+                    }
+
+                    return data;
+                } catch (e) {
+                    return { status: 'error', error: e.message };
+                }
+            }
+        """, terabox_url)
 
         await browser.close()
 
-    # Call API with cookies
-    headers = {
-        "accept": "*/*",
-        "accept-language": "en-US,en;q=0.6",
-        "content-type": "application/json",
-        "origin": "https://iteraplay.com",
-        "referer": "https://iteraplay.com/",
-        "sec-ch-ua": '"Not:A-Brand";v="99", "Brave";v="145", "Chromium";v="145"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        "sec-gpc": "1",
-        "user-agent": UA,
-    }
+    print(f"  ✅ API result status: {api_result.get('status')}")
 
-    print(f"  🔄 Calling iTeraPlay API...")
-    resp = session.post(
-        "https://iteraplay.com/api/stream",
-        headers=headers,
-        cookies=cookie_dict,
-        json={"url": terabox_url},
-        timeout=30,
-    )
-
-    print(f"  📡 Status: {resp.status_code}")
-
-    if not resp.text:
-        raise Exception("iTeraPlay returned empty response — Cloudflare may have blocked")
-
-    try:
-        data = resp.json()
-    except Exception as e:
-        raise Exception(f"iTeraPlay invalid JSON: {resp.text[:200]}")
-
-    # Handle token expiry
-    if data.get("error_detail") and "expired" in data.get("error_detail", "").lower():
-        new_token = data.get("new_api_token")
-        if new_token:
-            print("  🔄 Token expired, retrying...")
-            cookie_dict["__secure_token"] = new_token
-            resp = session.post(
-                "https://iteraplay.com/api/stream",
-                headers=headers,
-                cookies=cookie_dict,
-                json={"url": terabox_url},
-                timeout=30,
-            )
-            data = resp.json()
-
-    if data.get("status") != "success":
-        raise Exception(data.get("error") or data.get("error_detail") or "iTeraPlay API error")
-    return data
+    if api_result.get("status") != "success":
+        raise Exception(api_result.get("error") or api_result.get("error_detail") or "iTeraPlay API error")
+    return api_result
 
 
 # ==========================================
